@@ -84,8 +84,10 @@ await analytics.query.timeseries({ since });
 // -> [{ time: Date, values: { chatgpt: 2, claude: 0 } }, ...]
 ```
 
-The same namespace exposes `getIndex()` and `dropIndex()` for managing the
-underlying search index.
+Indexing is asynchronous, and the queries above read whatever has been indexed
+so far — they do **not** wait. When you need a read to reflect events you just
+recorded, call `analytics.query.waitIndexing()` first. The namespace also
+exposes `getIndex()` and `dropIndex()` for managing the underlying search index.
 
 ## Configuration
 

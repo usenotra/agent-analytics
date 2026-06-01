@@ -165,6 +165,9 @@ describe("analytics aggregations", () => {
     // Older than 24h but within 7d.
     await analytics.record({ provider: "claude", citedUrl: "/a" }, at(30));
     await analytics.record({ provider: "claude", citedUrl: "/a" }, at(30));
+
+    // Queries no longer wait implicitly; block until the index is caught up.
+    await analytics.query.waitIndexing();
   });
 
   afterAll(() => cleanup(analytics));

@@ -65,7 +65,6 @@ class AnalyticsQuery {
     range: TimeRange,
   ): Promise<Record<string, number>> {
     const index = await this.getIndex();
-    await index.waitIndexing();
 
     const { sinceHour, untilHour } = resolveRange(range);
     const result = await index.aggregate({
@@ -95,7 +94,6 @@ class AnalyticsQuery {
     groupBy: DimensionKey = "provider",
   ): Promise<TimeseriesBucket[]> {
     const index = await this.getIndex();
-    await index.waitIndexing();
 
     const { sinceHour, untilHour } = resolveRange(range);
     const result = await index.aggregate({
@@ -153,6 +151,18 @@ class AnalyticsQuery {
       });
     }
     return this.indexPromise;
+  }
+
+  /**
+   * Block until the search index has caught up with the latest writes.
+   *
+   * Indexing is asynchronous, so {@link aggregateBy} and {@link timeseries}
+   * read whatever has been indexed so far. Call this after recording events
+   * when you need the queries to reflect them (e.g. in tests, or a
+   * read-after-write dashboard refresh).
+   */
+  public async waitIndexing(): Promise<void> {
+    await (await this.getIndex()).waitIndexing();
   }
 
   /** Drop the search index. The underlying event hashes are left untouched. */
