@@ -84,10 +84,20 @@ await analytics.query.timeseries({ since });
 // -> [{ time: Date, values: { chatgpt: 2, claude: 0 } }, ...]
 ```
 
-Indexing is asynchronous, and the queries above read whatever has been indexed
+### Setup & the search index
+
+The queries above issue a single search request against a cheap local index
+reference; they assume the index already exists and throw `IndexNotFoundError`
+if it doesn't. Create it once, at setup (it's idempotent):
+
+```ts
+await analytics.query.getIndex(); // creates the search index if missing
+```
+
+Indexing is then asynchronous, and the queries read whatever has been indexed
 so far — they do **not** wait. When you need a read to reflect events you just
-recorded, call `analytics.query.waitIndexing()` first. The namespace also
-exposes `getIndex()` and `dropIndex()` for managing the underlying search index.
+recorded, call `analytics.query.waitIndexing()` first. `dropIndex()` removes the
+index (the event hashes are left untouched).
 
 ## Configuration
 

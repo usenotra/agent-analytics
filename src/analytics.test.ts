@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Redis } from "@upstash/redis";
 
-import { AgentAnalytics } from "./analytics.ts";
+import { AgentAnalytics, IndexNotFoundError } from "./analytics.ts";
 import { dataHash, dimensionPairs } from "./hash.ts";
 import { dateToHourInt, hourIntToDate, HOUR_MS } from "./time.ts";
 import type { TrackedEvent } from "./types.ts";
@@ -166,7 +166,9 @@ describe("analytics aggregations", () => {
     await analytics.record({ provider: "claude", citedUrl: "/a" }, at(30));
     await analytics.record({ provider: "claude", citedUrl: "/a" }, at(30));
 
-    // Queries no longer wait implicitly; block until the index is caught up.
+    // The index must be created explicitly (queries assume it exists), and
+    // queries no longer wait implicitly — block until it is caught up.
+    await analytics.query.getIndex();
     await analytics.query.waitIndexing();
   });
 
@@ -207,5 +209,23 @@ describe("analytics aggregations", () => {
     expect(bucketAt(1).values).toEqual({ chatgpt: 2, claude: 0, perplexity: 0 });
     expect(bucketAt(2).values).toEqual({ chatgpt: 0, claude: 0, perplexity: 1 });
     expect(bucketAt(3).values).toEqual({ chatgpt: 0, claude: 0, perplexity: 0 });
+  });
+});
+
+describe("querying without an index", () => {
+  // A prefix whose index is never created via getIndex().
+  const analytics = new TestableAnalytics({ redis, prefix: uniquePrefix() });
+
+  afterAll(() => cleanup(analytics));
+
+  test("aggregateBy throws IndexNotFoundError when the index does not exist", async () => {
+    const promise = analytics.query.aggregateBy("provider", { since: new Date(Date.now() - HOUR_MS) });
+    await expect(promise).rejects.toBeInstanceOf(IndexNotFoundError);
+    await expect(promise).rejects.toThrow(/Search index ".*" does not exist\. Call query\.getIndex\(\)/);
+  });
+
+  test("timeseries throws IndexNotFoundError when the index does not exist", async () => {
+    const promise = analytics.query.timeseries({ since: new Date(Date.now() - HOUR_MS) });
+    await expect(promise).rejects.toBeInstanceOf(IndexNotFoundError);
   });
 });

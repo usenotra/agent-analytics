@@ -19,6 +19,20 @@ export const DEFAULT_PREFIX = "@upstash/agent-analytics";
 export const DEFAULT_RETENTION = "28d";
 
 /**
+ * Thrown by {@link AgentAnalytics.query} reads when the search index has not
+ * been created yet. Call `query.getIndex()` once before querying.
+ */
+export class IndexNotFoundError extends Error {
+  public constructor(indexName: string) {
+    super(
+      `Search index "${indexName}" does not exist. ` +
+        `Call query.getIndex() once (e.g. at setup) before aggregateBy()/timeseries().`,
+    );
+    this.name = "IndexNotFoundError";
+  }
+}
+
+/**
  * Flat schema of an event hash. `count` and `hourInt` are numeric so we can
  * range-filter and group on them; the dimensions are keywords so we can group
  * by their exact values.
@@ -44,8 +58,6 @@ function resolveRange(range: TimeRange): { sinceHour: number; untilHour: number 
  * index. Reached via {@link AgentAnalytics.query}.
  */
 class AnalyticsQuery {
-  private indexPromise?: ReturnType<Redis["search"]["createIndex"]>;
-
   public constructor(
     private readonly redis: Redis,
     private readonly keyPrefix: string,
@@ -53,7 +65,40 @@ class AnalyticsQuery {
   ) {}
 
   /**
+   * A local reference to the search index. This does **not** make a network
+   * round-trip and does **not** create the index — it only builds the handle
+   * used to issue queries. The index itself must already exist on the server
+   * (see {@link getIndex}).
+   */
+  private index() {
+    return this.redis.search.index<typeof EVENT_SCHEMA>({
+      name: this.indexName,
+      schema: EVENT_SCHEMA,
+    });
+  }
+
+  /**
+   * Run a query, translating the opaque failure you get from a non-existent
+   * index into a clear {@link IndexNotFoundError}. The extra `describe()`
+   * round-trip only happens on the error path, so the happy path stays a
+   * single request.
+   */
+  private async run<T>(query: () => Promise<T>): Promise<T> {
+    try {
+      return await query();
+    } catch (error) {
+      if ((await this.index().describe()) === null) {
+        throw new IndexNotFoundError(this.indexName);
+      }
+      throw error;
+    }
+  }
+
+  /**
    * Sum the counters in a time window, grouped by one dimension.
+   *
+   * The index must already exist — call {@link getIndex} once at setup.
+   * Otherwise this throws {@link IndexNotFoundError}.
    *
    * @example
    * // Citations per provider over the last 24 hours
@@ -64,18 +109,18 @@ class AnalyticsQuery {
     field: DimensionKey,
     range: TimeRange,
   ): Promise<Record<string, number>> {
-    const index = await this.getIndex();
-
     const { sinceHour, untilHour } = resolveRange(range);
-    const result = await index.aggregate({
-      filter: { hourInt: { $gte: sinceHour, $lte: untilHour } },
-      aggregations: {
-        groups: {
-          $terms: { field, size: 10_000 },
-          $aggs: { total: { $sum: { field: "count" } } },
+    const result = await this.run(() =>
+      this.index().aggregate({
+        filter: { hourInt: { $gte: sinceHour, $lte: untilHour } },
+        aggregations: {
+          groups: {
+            $terms: { field, size: 10_000 },
+            $aggs: { total: { $sum: { field: "count" } } },
+          },
         },
-      },
-    });
+      }),
+    );
 
     const counts: Record<string, number> = {};
     for (const bucket of result.groups.buckets) {
@@ -88,28 +133,32 @@ class AnalyticsQuery {
    * Hourly time series of summed counters in a window, grouped by one
    * dimension (provider by default). Returns one bucket per hour in the range
    * (including empty hours), sorted ascending, so it is chart-ready.
+   *
+   * Like {@link aggregateBy}, this requires the index to already exist and
+   * throws {@link IndexNotFoundError} if it was never created via
+   * {@link getIndex}.
    */
   public async timeseries(
     range: TimeRange,
     groupBy: DimensionKey = "provider",
   ): Promise<TimeseriesBucket[]> {
-    const index = await this.getIndex();
-
     const { sinceHour, untilHour } = resolveRange(range);
-    const result = await index.aggregate({
-      filter: { hourInt: { $gte: sinceHour, $lte: untilHour } },
-      aggregations: {
-        byHour: {
-          $histogram: { field: "hourInt", interval: 1 },
-          $aggs: {
-            byGroup: {
-              $terms: { field: groupBy, size: 10_000 },
-              $aggs: { total: { $sum: { field: "count" } } },
+    const result = await this.run(() =>
+      this.index().aggregate({
+        filter: { hourInt: { $gte: sinceHour, $lte: untilHour } },
+        aggregations: {
+          byHour: {
+            $histogram: { field: "hourInt", interval: 1 },
+            $aggs: {
+              byGroup: {
+                $terms: { field: groupBy, size: 10_000 },
+                $aggs: { total: { $sum: { field: "count" } } },
+              },
             },
           },
         },
-      },
-    });
+      }),
+    );
 
     // Collect the populated hours and the full set of groups we saw, so every
     // bucket can carry the same keys (missing -> 0).
@@ -138,19 +187,20 @@ class AnalyticsQuery {
   }
 
   /**
-   * Ensure the search index exists (idempotent) and return a reference to it.
+   * Create the search index (idempotent — uses `existsOk`) and return a
+   * reference to it. This makes a network round-trip, so call it **once at
+   * setup**, not on the read path: {@link aggregateBy} / {@link timeseries}
+   * use a cheap local reference and assume the index already exists.
    */
-  public getIndex(): ReturnType<Redis["search"]["createIndex"]> {
-    if (!this.indexPromise) {
-      this.indexPromise = this.redis.search.createIndex<typeof EVENT_SCHEMA>({
-        name: this.indexName,
-        prefix: this.keyPrefix,
-        dataType: "hash",
-        existsOk: true,
-        schema: EVENT_SCHEMA,
-      });
-    }
-    return this.indexPromise;
+  public async getIndex() {
+    await this.redis.search.createIndex<typeof EVENT_SCHEMA>({
+      name: this.indexName,
+      prefix: this.keyPrefix,
+      dataType: "hash",
+      existsOk: true,
+      schema: EVENT_SCHEMA,
+    });
+    return this.index();
   }
 
   /**
@@ -159,16 +209,15 @@ class AnalyticsQuery {
    * Indexing is asynchronous, so {@link aggregateBy} and {@link timeseries}
    * read whatever has been indexed so far. Call this after recording events
    * when you need the queries to reflect them (e.g. in tests, or a
-   * read-after-write dashboard refresh).
+   * read-after-write dashboard refresh). Requires the index to exist.
    */
   public async waitIndexing(): Promise<void> {
-    await (await this.getIndex()).waitIndexing();
+    await this.index().waitIndexing();
   }
 
   /** Drop the search index. The underlying event hashes are left untouched. */
   public async dropIndex(): Promise<void> {
-    this.indexPromise = undefined;
-    await this.redis.search.index({ name: this.indexName }).drop();
+    await this.index().drop();
   }
 }
 
