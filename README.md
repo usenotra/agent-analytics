@@ -1,87 +1,99 @@
 # @upstash/agent-analytics
 
-AI citation analytics for Upstash Redis, implemented the same way `@upstash/ratelimit` stores analytics.
+AI citation analytics for Upstash Redis, built directly on the Redis
+[Search](https://upstash.com/docs/redis/search) extension — no
+`@upstash/core-analytics` dependency.
 
-The SDK wraps `@upstash/core-analytics` with:
+## How it works
 
-- Redis sorted-set analytics buckets
-- `window: "1h"`
-- `retention: "90d"`
-- table name `events`
-- default prefix `@upstash/ai-tracking`
-- a `pending` promise that middleware can pass to `waitUntil`
+Every citation is bucketed by the hour and by its dimensions. A single Redis
+hash holds the counter for one combination of dimensions in one hour:
 
-## Next.js middleware
+```
+key:   <prefix>:event:<data-hash>:<hourInt>
+value: { count, hourInt, provider, citedUrl, sourceUrl?, country? }
+```
+
+- **`data-hash`** is derived from the event's dimensions. It is
+  order-independent: `record({ provider, citedUrl })` and
+  `record({ citedUrl, provider })` map to the same key.
+- **`hourInt`** is an integer hour bucket. The hour is never exposed in the
+  public API — every method takes and returns `Date`.
+- Ingestion runs a small Lua script: it `HINCRBY`s the `count` field, and only
+  the first time the counter is created does it write the immutable metadata
+  and set the expiry (28 days by default, configurable).
+- A Redis Search index over these hashes (with `count` and `hourInt` as numeric
+  fields) powers the aggregations.
+
+## Tracking
 
 ```ts
 import { AgentAnalytics } from "@upstash/agent-analytics";
 import { redis } from "./redis";
 
-const req = new Request("https://upstash.com/blog");
-
 const analytics = new AgentAnalytics({ redis });
-await analytics.track(req).pending;
+
+// From a Fetch/NextRequest — provider, citedUrl, sourceUrl and country are
+// inferred from the request:
+const { pending } = analytics.track(request);
+await pending;
+
+// Or record dimensions directly (time defaults to now):
+await analytics.record({ provider: "chatgpt", citedUrl: "/pricing" });
 ```
+
+### Next.js middleware
 
 ```ts
 // middleware.ts
 import { NextResponse, type NextRequest } from "next/server";
 import { AgentAnalytics } from "@upstash/agent-analytics";
 
-const analytics = AgentAnalytics.fromEnv({
-  prefix: "@upstash/ai-tracking",
-});
+const analytics = AgentAnalytics.fromEnv();
 
 export function middleware(req: NextRequest) {
   const res = NextResponse.next();
-
   const { pending } = analytics.track(req);
-
   res.waitUntil?.(pending);
   return res;
 }
 ```
 
-## Direct analytics API
+`track()` never throws; any failure is swallowed and surfaced through the
+returned `pending` promise.
 
-Use this in the dashboard or internal API routes.
+## Analytics
+
+The read side lives under `.query`. Both queries take a `{ since, until? }`
+window of `Date`s (`until` defaults to now). They are designed for windows from
+24 hours up to 7 days.
 
 ```ts
-import { Redis } from "@upstash/redis";
-import { Analytics } from "@upstash/agent-analytics";
+const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
-const analytics = new Analytics({
-  redis: Redis.fromEnv(),
-  prefix: "@upstash/ai-tracking",
+// Sum of citations grouped by one dimension. The field is type-safe.
+await analytics.query.aggregateBy("provider", { since });
+// -> { chatgpt: 12, claude: 7, perplexity: 3 }
+
+await analytics.query.aggregateBy("citedUrl", { since });
+// -> { "/pricing": 9, "/blog": 13 }
+
+// Hourly time series, grouped by provider (default). One gap-filled bucket per
+// hour in the window, sorted ascending — ready to chart.
+await analytics.query.timeseries({ since });
+// -> [{ time: Date, values: { chatgpt: 2, claude: 0 } }, ...]
+```
+
+The same namespace exposes `getIndex()` and `dropIndex()` for managing the
+underlying search index.
+
+## Configuration
+
+```ts
+new AgentAnalytics({
+  redis,
+  prefix: "@upstash/agent-analytics", // key namespace (default)
+  retention: "28d",                   // hour-bucket TTL (default); also accepts seconds
+  indexName: "...",                   // search index name (defaults to one derived from prefix)
 });
-
-// Who cited us since this cutoff timestamp?
-const providers = await analytics.getUsage(Date.now() - 24 * 60 * 60 * 1000);
-
-// Which pages were cited since this cutoff timestamp?
-const pages = await analytics.getPages(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-// Hourly chart buckets.
-const overTime = await analytics.getUsageOverTime(24, "provider");
 ```
-
-## Tracking
-
-```ts
-const { pending } = analytics.track(request);
-```
-
-`track()` accepts a standard Fetch `Request`, which also works with `NextRequest`. The SDK reads these fields from the request:
-
-- `citedUrl`: `request.nextUrl.href` when present, otherwise `request.url`
-- `sourceUrl`: `referer`/`referrer` header
-- `userAgent`: `user-agent` header
-- geo fields: `request.geo` on Vercel or `request.cf` on Cloudflare
-- `ip`: `request.ip`, `x-forwarded-for`, or `x-real-ip`
-- `provider`: inferred from referrer/user-agent, falling back to `other`
-
-## Same pattern as ratelimit
-
-`@upstash/ratelimit` exposes a small `Analytics` class that creates `@upstash/core-analytics` with hourly buckets, the `events` table, a Redis prefix, and 90 day retention. Its parent class records an event asynchronously and merges that promise into `response.pending`.
-
-This package does the same thing. The parent `AgentAnalytics` class calls `Analytics.record()`, catches analytics failures, and returns `{ success: true, pending }`.

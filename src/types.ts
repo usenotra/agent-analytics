@@ -1,0 +1,99 @@
+import type { Redis as UpstashRedis } from "@upstash/redis";
+import type { Duration } from "./duration.ts";
+
+export type { Duration } from "./duration.ts";
+
+/**
+ * The AI agent / crawler that produced the citation. Inferred from the
+ * request's user-agent and referrer, falling back to `"other"`. Open-ended so
+ * callers can record providers we don't know about yet.
+ */
+export type Provider =
+  | "chatgpt"
+  | "claude"
+  | "perplexity"
+  | "gemini"
+  | "copilot"
+  | "other"
+  | (string & {});
+
+/** Geo information optionally attached to a request by the edge runtime. */
+export type Geo = {
+  country?: string;
+  city?: string;
+  region?: string;
+  ip?: string;
+};
+
+/**
+ * The dimensions of a tracked citation. This is intentionally a small, pruned
+ * set: every distinct combination of these values becomes its own counter
+ * (one hash key per hour), so we only keep fields that are useful to group and
+ * filter analytics by. Time is **not** a dimension — it lives in the hour
+ * bucket of the key.
+ */
+export type TrackedEvent = {
+  /** Which AI agent cited the page. */
+  provider: Provider;
+  /** The page on our site that was cited. */
+  citedUrl: string;
+  /** Where the citation came from (referrer), if known. */
+  sourceUrl?: string;
+  /** Visitor country, if the edge runtime provided geo data. */
+  country?: string;
+};
+
+/** The dimensions that can be grouped/filtered on. */
+export type DimensionKey = keyof TrackedEvent;
+
+/**
+ * Minimal Redis surface this SDK needs. Accepts the full `@upstash/redis`
+ * client (or anything structurally compatible).
+ */
+export type Redis = Pick<UpstashRedis, "eval" | "search" | "scan">;
+
+export type AgentAnalyticsConfig = {
+  redis: Redis;
+  /**
+   * All analytics keys in Redis are prefixed with this.
+   *
+   * @default "@upstash/agent-analytics"
+   */
+  prefix?: string;
+  /**
+   * How long an hour bucket is kept before it expires.
+   *
+   * @default "28d"
+   */
+  retention?: Duration;
+  /**
+   * Name of the search index used for aggregations. Defaults to a name
+   * derived from {@link prefix}.
+   */
+  indexName?: string;
+};
+
+export type TrackResponse = {
+  success: true;
+  /** Resolves once the event has been written. Pass to `waitUntil`. */
+  pending: Promise<unknown>;
+};
+
+/**
+ * A half-open time window, expressed in `Date`s. `until` defaults to "now".
+ * Analytics are designed for windows from 24 hours up to 7 days.
+ */
+export type TimeRange = {
+  since: Date;
+  until?: Date;
+};
+
+/**
+ * One hour bucket of a time series. `values` maps each group (e.g. provider)
+ * to its summed counter for that hour.
+ */
+export type TimeseriesBucket = {
+  /** Start of the hour bucket. */
+  time: Date;
+  values: Record<string, number>;
+};

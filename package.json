@@ -28,8 +28,9 @@
   ],
   "sideEffects": false,
   "scripts": {
-    "build": "tsup index.ts --format esm,cjs --dts --clean",
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
     "typecheck": "tsc --noEmit",
+    "test": "bun test",
     "prepack": "bun run build",
     "pack:dry": "npm pack --dry-run"
   },
@@ -41,7 +42,6 @@
     "nextjs"
   ],
   "dependencies": {
-    "@upstash/core-analytics": "^0.0.10",
     "@upstash/redis": "^1.38.0"
   },
   "devDependencies": {
