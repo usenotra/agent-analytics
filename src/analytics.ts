@@ -7,10 +7,11 @@ import { INGEST_SCRIPT } from "./script.ts";
 import { dateToHourInt, hourIntToDate } from "./time.ts";
 import type {
   AgentAnalyticsConfig,
-  DimensionKey,
+  AggregateByOptions,
   Redis,
   TimeRange,
   TimeseriesBucket,
+  TimeseriesOptions,
   TrackedEvent,
   TrackResponse,
 } from "./types.ts";
@@ -102,14 +103,12 @@ class AnalyticsQuery {
    *
    * @example
    * // Citations per provider over the last 24 hours
-   * await analytics.query.aggregateBy("provider", { since: new Date(Date.now() - 24 * 3600_000) });
+   * await analytics.query.aggregateBy({ field: "provider", since: new Date(Date.now() - 24 * 3600_000) });
    * // -> { chatgpt: 12, claude: 7, perplexity: 3 }
    */
-  public async aggregateBy(
-    field: DimensionKey,
-    range: TimeRange,
-  ): Promise<Record<string, number>> {
-    const { sinceHour, untilHour } = resolveRange(range);
+  public async aggregateBy(options: AggregateByOptions): Promise<Record<string, number>> {
+    const { field } = options;
+    const { sinceHour, untilHour } = resolveRange(options);
     const result = await this.run(() =>
       this.index().aggregate({
         filter: { hourInt: { $gte: sinceHour, $lte: untilHour } },
@@ -137,12 +136,14 @@ class AnalyticsQuery {
    * Like {@link aggregateBy}, this requires the index to already exist and
    * throws {@link IndexNotFoundError} if it was never created via
    * {@link getIndex}.
+   *
+   * @example
+   * await analytics.query.timeseries({ since: new Date(Date.now() - 24 * 3600_000), groupBy: "provider" });
+   * // -> [{ time: Date, values: { chatgpt: 2, claude: 0 } }, ...]
    */
-  public async timeseries(
-    range: TimeRange,
-    groupBy: DimensionKey = "provider",
-  ): Promise<TimeseriesBucket[]> {
-    const { sinceHour, untilHour } = resolveRange(range);
+  public async timeseries(options: TimeseriesOptions): Promise<TimeseriesBucket[]> {
+    const groupBy = options.groupBy ?? "provider";
+    const { sinceHour, untilHour } = resolveRange(options);
     const result = await this.run(() =>
       this.index().aggregate({
         filter: { hourInt: { $gte: sinceHour, $lte: untilHour } },

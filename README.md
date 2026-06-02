@@ -72,15 +72,16 @@ window of `Date`s (`until` defaults to now). They are designed for windows from
 const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
 
 // Sum of citations grouped by one dimension. The field is type-safe.
-await analytics.query.aggregateBy("provider", { since });
+await analytics.query.aggregateBy({ field: "provider", since });
 // -> { chatgpt: 12, claude: 7, perplexity: 3 }
 
-await analytics.query.aggregateBy("citedUrl", { since });
+await analytics.query.aggregateBy({ field: "citedUrl", since });
 // -> { "/pricing": 9, "/blog": 13 }
 
 // Hourly time series, grouped by provider (default). One gap-filled bucket per
 // hour in the window, sorted ascending — ready to chart.
 await analytics.query.timeseries({ since });
+await analytics.query.timeseries({ since, groupBy: "citedUrl" });
 // -> [{ time: Date, values: { chatgpt: 2, claude: 0 } }, ...]
 ```
 

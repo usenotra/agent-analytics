@@ -2,6 +2,7 @@ export { AgentAnalytics, IndexNotFoundError } from "./analytics.ts";
 
 export type {
   AgentAnalyticsConfig,
+  AggregateByOptions,
   DimensionKey,
   Duration,
   Geo,
@@ -9,6 +10,7 @@ export type {
   Redis,
   TimeRange,
   TimeseriesBucket,
+  TimeseriesOptions,
   TrackedEvent,
   TrackResponse,
 } from "./types.ts";

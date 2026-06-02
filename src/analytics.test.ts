@@ -175,22 +175,22 @@ describe("analytics aggregations", () => {
   afterAll(() => cleanup(analytics));
 
   test("aggregateBy(provider) over the last 24h sums counters and excludes older buckets", async () => {
-    const result = await analytics.query.aggregateBy("provider", { since: at(23), until: now });
+    const result = await analytics.query.aggregateBy({ field: "provider", since: at(23), until: now });
     expect(result).toEqual({ chatgpt: 5, claude: 1, perplexity: 1 });
   });
 
   test("aggregateBy(provider) over the last 7d includes the older bucket", async () => {
-    const result = await analytics.query.aggregateBy("provider", { since: at(24 * 7), until: now });
+    const result = await analytics.query.aggregateBy({ field: "provider", since: at(24 * 7), until: now });
     expect(result).toEqual({ chatgpt: 5, claude: 3, perplexity: 1 });
   });
 
   test("aggregateBy(citedUrl) groups by page", async () => {
-    const result = await analytics.query.aggregateBy("citedUrl", { since: at(23), until: now });
+    const result = await analytics.query.aggregateBy({ field: "citedUrl", since: at(23), until: now });
     expect(result).toEqual({ "/a": 4, "/b": 3 });
   });
 
   test("timeseries(provider) returns one gap-filled bucket per hour, grouped by provider", async () => {
-    const series = await analytics.query.timeseries({ since: at(3), until: now }, "provider");
+    const series = await analytics.query.timeseries({ since: at(3), until: now, groupBy: "provider" });
 
     // since=at(3) .. until=now -> hours [now-3 .. now] inclusive = 4 buckets.
     expect(series).toHaveLength(4);
@@ -219,7 +219,7 @@ describe("querying without an index", () => {
   afterAll(() => cleanup(analytics));
 
   test("aggregateBy throws IndexNotFoundError when the index does not exist", async () => {
-    const promise = analytics.query.aggregateBy("provider", { since: new Date(Date.now() - HOUR_MS) });
+    const promise = analytics.query.aggregateBy({ field: "provider", since: new Date(Date.now() - HOUR_MS) });
     await expect(promise).rejects.toBeInstanceOf(IndexNotFoundError);
     await expect(promise).rejects.toThrow(/Search index ".*" does not exist\. Call query\.getIndex\(\)/);
   });

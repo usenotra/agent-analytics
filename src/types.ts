@@ -88,6 +88,22 @@ export type TimeRange = {
   until?: Date;
 };
 
+/** Options for `query.aggregateBy` — a time window plus the dimension to group by. */
+export type AggregateByOptions = TimeRange & {
+  /** The dimension to group and sum by. */
+  field: DimensionKey;
+};
+
+/** Options for `query.timeseries` — a time window plus an optional grouping. */
+export type TimeseriesOptions = TimeRange & {
+  /**
+   * The dimension to break each hour down by.
+   *
+   * @default "provider"
+   */
+  groupBy?: DimensionKey;
+};
+
 /**
  * One hour bucket of a time series. `values` maps each group (e.g. provider)
  * to its summed counter for that hour.
