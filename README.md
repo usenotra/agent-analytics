@@ -4,6 +4,34 @@ AI citation analytics for Upstash Redis, built directly on the Redis
 [Search](https://upstash.com/docs/redis/search) extension — no
 `@upstash/core-analytics` dependency.
 
+## Installation
+
+```bash
+npm install @upstash/agent-analytics @upstash/redis
+```
+
+`@upstash/redis` is a peer dependency — install it alongside the SDK. Then
+create the analytics client:
+
+```ts
+import { AgentAnalytics } from "@upstash/agent-analytics";
+
+// Reads UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN from the environment:
+const analytics = AgentAnalytics.fromEnv();
+```
+
+Or pass your own `@upstash/redis` client — useful when you configure it
+explicitly or reuse an existing instance:
+
+```ts
+import { AgentAnalytics } from "@upstash/agent-analytics";
+import { Redis } from "@upstash/redis";
+
+const analytics = new AgentAnalytics({
+  redis: new Redis({ url: "...", token: "..." }),
+});
+```
+
 ## How it works
 
 Every citation is bucketed by the hour and by its dimensions. A single Redis
