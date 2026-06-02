@@ -294,7 +294,7 @@ export class AgentAnalytics {
     const hour = dateToHourInt(time);
     const key = this.eventKey(dataHash(pairs), hour);
 
-    const args: (string | number)[] = [this.ttlSeconds, hour, pairs.length];
+    const args: (string | number)[] = [this.ttlSeconds, hour];
     for (const [name, value] of pairs) {
       args.push(name, value);
     }

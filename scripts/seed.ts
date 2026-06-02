@@ -160,6 +160,10 @@ async function main(): Promise<void> {
   const cleared = await clearExisting();
   console.log(`Cleared ${cleared} existing event keys.`);
 
+  // Drop any pre-existing index so a schema change (e.g. renamed fields) doesn't
+  // collide with `existsOk` when we recreate it below.
+  await analytics.query.dropIndex();
+
   const buckets = generate(now);
   const populatedHours = new Set(buckets.map((b) => b.hour)).size;
   const totalCitations = buckets.reduce((sum, b) => sum + b.count, 0);
