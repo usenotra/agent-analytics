@@ -4,15 +4,14 @@
   "workspaces": {
     "": {
       "name": "agent-analytics",
-      "dependencies": {
-        "@upstash/redis": "^1.38.0",
-      },
       "devDependencies": {
         "@types/bun": "latest",
+        "@upstash/redis": "^1.38.0",
         "tsup": "^8.5.1",
         "typescript": "^6.0.3",
       },
       "peerDependencies": {
+        "@upstash/redis": "^1.38.0",
         "typescript": ">=5",
       },
     },
