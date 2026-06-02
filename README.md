@@ -28,7 +28,7 @@ value: { count, hour, provider, path, sourceUrl?, country? }
 ## Tracking
 
 `track` is overloaded — pass a `Request` (dimensions are inferred) or an
-explicit event. It never throws; the write is surfaced via `pending`.
+explicit event. It returns a promise resolving to the counter's new value.
 
 ```ts
 import { AgentAnalytics } from "@upstash/agent-analytics";
@@ -36,34 +36,39 @@ import { redis } from "./redis";
 
 const analytics = new AgentAnalytics({ redis });
 
-// From a Fetch/NextRequest — provider, path, sourceUrl and country are
-// inferred from the request:
-const { pending } = analytics.track(request);
-await pending;
+// From a Fetch/NextRequest — provider, path, sourceUrl and country are inferred:
+await analytics.track(request);
 
 // Or pass explicit dimensions (time defaults to now):
-await analytics.track({ provider: "chatgpt", path: "/pricing" }).pending;
+await analytics.track({ provider: "chatgpt", path: "/pricing" });
 ```
 
-### Next.js middleware
+### Don't block the response — use `after`
+
+In a request handler you rarely want to await the write. On Next.js, schedule it
+with [`after`](https://nextjs.org/docs/app/api-reference/functions/after) so it
+runs as a background side-effect once the response has been sent:
 
 ```ts
-// middleware.ts
-import { NextResponse, type NextRequest } from "next/server";
+import { after } from "next/server";
 import { AgentAnalytics } from "@upstash/agent-analytics";
 
 const analytics = AgentAnalytics.fromEnv();
 
-export function middleware(req: NextRequest) {
-  const res = NextResponse.next();
-  const { pending } = analytics.track(req);
-  res.waitUntil?.(pending);
-  return res;
+export async function GET(req: Request) {
+  // Returns immediately; the write happens after the response is sent.
+  after(() => analytics.track(req));
+  return Response.json({ ok: true });
 }
 ```
 
-`track()` never throws; any failure is swallowed and surfaced through the
-returned `pending` promise.
+`after` works the same way in middleware, Route Handlers, and Server Actions —
+the function stays alive for the background write without delaying the response.
+
+> **Earlier Next.js versions:** if `after` isn't available, use `waitUntil`
+> instead — `event.waitUntil(analytics.track(req))` in middleware (via
+> `NextFetchEvent`), or `waitUntil` from `@vercel/functions` elsewhere. See
+> [Using `after` in Next.js](https://vercel.com/docs/functions/functions-api-reference/vercel-functions-package#using-after-in-nextjs).
 
 ## Analytics
 

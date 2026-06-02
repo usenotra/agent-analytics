@@ -51,8 +51,8 @@ function keyFor(analytics: TestableAnalytics, event: TrackedEvent, time: Date): 
 }
 
 /** Track one event and await the write, returning the counter's new value. */
-function trackOne(analytics: TestableAnalytics, event: TrackedEvent, time?: Date): Promise<unknown> {
-  return analytics.track(event, time).pending;
+function trackOne(analytics: TestableAnalytics, event: TrackedEvent, time?: Date): Promise<number> {
+  return analytics.track(event, time);
 }
 
 describe("ingestion", () => {
@@ -128,14 +128,12 @@ describe("ingestion", () => {
     }
   });
 
-  test("track(Request) infers dimensions and resolves pending", async () => {
+  test("track(Request) infers dimensions and writes the event", async () => {
     const req = new Request("https://upstash.com/blog", {
       headers: { "user-agent": "PerplexityBot/1.0", referer: "https://www.perplexity.ai/" },
     });
 
-    const { success, pending } = analytics.track(req);
-    expect(success).toBe(true);
-    await pending;
+    expect(await analytics.track(req)).toBe(1);
 
     // provider inferred as perplexity, path normalized from the request URL.
     // Locate the hash by scanning rather than recomputing the (time-dependent) key.

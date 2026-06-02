@@ -1,6 +1,6 @@
 {
   "name": "@upstash/agent-analytics",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "AI citation analytics SDK for Upstash Redis.",
   "type": "module",
   "license": "MIT",

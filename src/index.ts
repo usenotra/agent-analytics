@@ -12,5 +12,4 @@ export type {
   TimeseriesBucket,
   TimeseriesOptions,
   TrackedEvent,
-  TrackResponse,
 } from "./types.ts";

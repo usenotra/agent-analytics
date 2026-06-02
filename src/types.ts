@@ -73,12 +73,6 @@ export type AgentAnalyticsConfig = {
   indexName?: string;
 };
 
-export type TrackResponse = {
-  success: true;
-  /** Resolves once the event has been written. Pass to `waitUntil`. */
-  pending: Promise<unknown>;
-};
-
 /**
  * A half-open time window, expressed in `Date`s. `until` defaults to "now".
  * Analytics are designed for windows from 24 hours up to 7 days.

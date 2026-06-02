@@ -13,7 +13,6 @@ import type {
   TimeseriesBucket,
   TimeseriesOptions,
   TrackedEvent,
-  TrackResponse,
 } from "./types.ts";
 
 export const DEFAULT_PREFIX = "@upstash/agent-analytics";
@@ -265,27 +264,19 @@ export class AgentAnalytics {
    * inferred from it) or from an explicit {@link TrackedEvent}. `time` only
    * applies to the event form and defaults to now.
    *
-   * Never throws — failures are swallowed and surfaced via the returned
-   * `pending` promise, which resolves to the counter's new value on success.
+   * Returns a promise resolving to the counter's new value. In a request
+   * handler you usually don't want to block the response on it — hand it to the
+   * runtime's `waitUntil` instead (see the README for the Vercel/Next.js
+   * pattern).
    *
    * Dimension order does not matter: `track({ provider, path })` and
    * `track({ path, provider })` increment the same counter.
    */
-  public track(req: Request): TrackResponse;
-  public track(event: TrackedEvent, time?: Date): TrackResponse;
-  public track(eventOrReq: TrackedEvent | Request, time?: Date): TrackResponse {
-    const response: TrackResponse = { success: true, pending: Promise.resolve() };
-
-    try {
-      const event = eventOrReq instanceof Request ? eventFromRequest(eventOrReq) : eventOrReq;
-      response.pending = this.ingest(event, time).catch((error) => {
-        console.warn("Failed to record analytics", error);
-      });
-    } catch (error) {
-      console.warn("Failed to record analytics", error);
-    }
-
-    return response;
+  public track(req: Request): Promise<number>;
+  public track(event: TrackedEvent, time?: Date): Promise<number>;
+  public async track(eventOrReq: TrackedEvent | Request, time?: Date): Promise<number> {
+    const event = eventOrReq instanceof Request ? eventFromRequest(eventOrReq) : eventOrReq;
+    return this.ingest(event, time);
   }
 
   /** Increment the counter for one event occurrence; returns its new value. */
