@@ -16,8 +16,8 @@ class TestableAnalytics extends AgentAnalytics {
   public override get keyPrefix(): string {
     return super.keyPrefix;
   }
-  public override eventKey(hash: string, hourInt: number): string {
-    return super.eventKey(hash, hourInt);
+  public override eventKey(hash: string, hour: number): string {
+    return super.eventKey(hash, hour);
   }
 }
 
@@ -45,9 +45,14 @@ async function cleanup(analytics: TestableAnalytics): Promise<void> {
   await analytics.query.dropIndex();
 }
 
-/** The key `record()` would write for a given event + time. */
+/** The key `track()` would write for a given event + time. */
 function keyFor(analytics: TestableAnalytics, event: TrackedEvent, time: Date): string {
   return analytics.eventKey(dataHash(dimensionPairs(event as Record<string, string>)), dateToHourInt(time));
+}
+
+/** Track one event and await the write, returning the counter's new value. */
+function trackOne(analytics: TestableAnalytics, event: TrackedEvent, time?: Date): Promise<unknown> {
+  return analytics.track(event, time).pending;
 }
 
 describe("ingestion", () => {
@@ -57,16 +62,16 @@ describe("ingestion", () => {
   afterAll(() => cleanup(analytics));
 
   test("first hit creates the counter, stores metadata, and sets the TTL", async () => {
-    const event: TrackedEvent = { provider: "chatgpt", citedUrl: "/pricing" };
+    const event: TrackedEvent = { provider: "chatgpt", path: "/pricing" };
     const key = keyFor(analytics, event, now);
 
-    expect(await analytics.record(event, now)).toBe(1);
+    expect(await trackOne(analytics, event, now)).toBe(1);
 
     const hash = (await redis.hgetall(key)) as Record<string, unknown>;
     expect(Number(hash.count)).toBe(1);
-    expect(Number(hash.hourInt)).toBe(dateToHourInt(now));
+    expect(Number(hash.hour)).toBe(dateToHourInt(now));
     expect(String(hash.provider)).toBe("chatgpt");
-    expect(String(hash.citedUrl)).toBe("/pricing");
+    expect(String(hash.path)).toBe("/pricing");
 
     const ttl = await redis.ttl(key);
     expect(ttl).toBeLessThanOrEqual(28 * 24 * 60 * 60);
@@ -74,29 +79,29 @@ describe("ingestion", () => {
   });
 
   test("subsequent hits only bump the counter; metadata is untouched", async () => {
-    const event: TrackedEvent = { provider: "gemini", citedUrl: "/docs" };
+    const event: TrackedEvent = { provider: "gemini", path: "/docs" };
     const key = keyFor(analytics, event, now);
 
-    expect(await analytics.record(event, now)).toBe(1);
-    expect(await analytics.record(event, now)).toBe(2);
-    expect(await analytics.record(event, now)).toBe(3);
+    expect(await trackOne(analytics, event, now)).toBe(1);
+    expect(await trackOne(analytics, event, now)).toBe(2);
+    expect(await trackOne(analytics, event, now)).toBe(3);
 
     const hash = (await redis.hgetall(key)) as Record<string, unknown>;
     expect(Number(hash.count)).toBe(3);
     expect(String(hash.provider)).toBe("gemini");
-    expect(String(hash.citedUrl)).toBe("/docs");
+    expect(String(hash.path)).toBe("/docs");
   });
 
   test("dimension order does not matter: same counter is incremented", async () => {
     const time = new Date(now.getTime() - 4 * HOUR_MS);
-    const a: TrackedEvent = { provider: "claude", citedUrl: "/blog", country: "US" };
-    const b: TrackedEvent = { country: "US", citedUrl: "/blog", provider: "claude" } as TrackedEvent;
+    const a: TrackedEvent = { provider: "claude", path: "/blog", country: "US" };
+    const b: TrackedEvent = { country: "US", path: "/blog", provider: "claude" } as TrackedEvent;
 
     // Both spellings resolve to the same key.
     expect(keyFor(analytics, a, time)).toBe(keyFor(analytics, b, time));
 
-    expect(await analytics.record(a, time)).toBe(1);
-    expect(await analytics.record(b, time)).toBe(2);
+    expect(await trackOne(analytics, a, time)).toBe(1);
+    expect(await trackOne(analytics, b, time)).toBe(2);
 
     const hash = (await redis.hgetall(keyFor(analytics, a, time))) as Record<string, unknown>;
     expect(Number(hash.count)).toBe(2);
@@ -107,15 +112,15 @@ describe("ingestion", () => {
     const hourA = new Date(now.getTime() - 10 * HOUR_MS);
     const hourB = new Date(now.getTime() - 11 * HOUR_MS);
 
-    await analytics.record({ provider: "perplexity", citedUrl: "/x" }, hourA);
-    await analytics.record({ provider: "perplexity", citedUrl: "/y" }, hourA); // different dimension
-    await analytics.record({ provider: "perplexity", citedUrl: "/x" }, hourB); // different hour
+    await trackOne(analytics, { provider: "perplexity", path: "/x" }, hourA);
+    await trackOne(analytics, { provider: "perplexity", path: "/y" }, hourA); // different dimension
+    await trackOne(analytics, { provider: "perplexity", path: "/x" }, hourB); // different hour
 
     const keys = await scanKeys(analytics.keyPrefix);
     const distinct = new Set([
-      keyFor(analytics, { provider: "perplexity", citedUrl: "/x" }, hourA),
-      keyFor(analytics, { provider: "perplexity", citedUrl: "/y" }, hourA),
-      keyFor(analytics, { provider: "perplexity", citedUrl: "/x" }, hourB),
+      keyFor(analytics, { provider: "perplexity", path: "/x" }, hourA),
+      keyFor(analytics, { provider: "perplexity", path: "/y" }, hourA),
+      keyFor(analytics, { provider: "perplexity", path: "/x" }, hourB),
     ]);
     expect(distinct.size).toBe(3);
     for (const key of distinct) {
@@ -123,7 +128,7 @@ describe("ingestion", () => {
     }
   });
 
-  test("track() extracts dimensions from a Request and resolves pending", async () => {
+  test("track(Request) infers dimensions and resolves pending", async () => {
     const req = new Request("https://upstash.com/blog", {
       headers: { "user-agent": "PerplexityBot/1.0", referer: "https://www.perplexity.ai/" },
     });
@@ -132,14 +137,14 @@ describe("ingestion", () => {
     expect(success).toBe(true);
     await pending;
 
-    // provider inferred as perplexity, citedUrl normalized from the request URL.
+    // provider inferred as perplexity, path normalized from the request URL.
     // Locate the hash by scanning rather than recomputing the (time-dependent) key.
     const keys = await scanKeys(analytics.keyPrefix);
     const hashes = await Promise.all(
       keys.map((key) => redis.hgetall(key) as Promise<Record<string, unknown>>),
     );
     const tracked = hashes.find(
-      (h) => h && String(h.provider) === "perplexity" && String(h.citedUrl) === "https://upstash.com/blog",
+      (h) => h && String(h.provider) === "perplexity" && String(h.path) === "https://upstash.com/blog",
     );
     expect(tracked).toBeDefined();
     expect(String(tracked!.sourceUrl)).toBe("https://www.perplexity.ai/");
@@ -155,16 +160,16 @@ describe("analytics aggregations", () => {
 
   beforeAll(async () => {
     // Within the last 24h.
-    await analytics.record({ provider: "chatgpt", citedUrl: "/a" }, at(0));
-    await analytics.record({ provider: "chatgpt", citedUrl: "/a" }, at(0));
-    await analytics.record({ provider: "chatgpt", citedUrl: "/a" }, at(0));
-    await analytics.record({ provider: "claude", citedUrl: "/a" }, at(0));
-    await analytics.record({ provider: "chatgpt", citedUrl: "/b" }, at(1));
-    await analytics.record({ provider: "chatgpt", citedUrl: "/b" }, at(1));
-    await analytics.record({ provider: "perplexity", citedUrl: "/b" }, at(2));
+    await trackOne(analytics, { provider: "chatgpt", path: "/a" }, at(0));
+    await trackOne(analytics, { provider: "chatgpt", path: "/a" }, at(0));
+    await trackOne(analytics, { provider: "chatgpt", path: "/a" }, at(0));
+    await trackOne(analytics, { provider: "claude", path: "/a" }, at(0));
+    await trackOne(analytics, { provider: "chatgpt", path: "/b" }, at(1));
+    await trackOne(analytics, { provider: "chatgpt", path: "/b" }, at(1));
+    await trackOne(analytics, { provider: "perplexity", path: "/b" }, at(2));
     // Older than 24h but within 7d.
-    await analytics.record({ provider: "claude", citedUrl: "/a" }, at(30));
-    await analytics.record({ provider: "claude", citedUrl: "/a" }, at(30));
+    await trackOne(analytics, { provider: "claude", path: "/a" }, at(30));
+    await trackOne(analytics, { provider: "claude", path: "/a" }, at(30));
 
     // The index must be created explicitly (queries assume it exists), and
     // queries no longer wait implicitly — block until it is caught up.
@@ -184,8 +189,8 @@ describe("analytics aggregations", () => {
     expect(result).toEqual({ chatgpt: 5, claude: 3, perplexity: 1 });
   });
 
-  test("aggregateBy(citedUrl) groups by page", async () => {
-    const result = await analytics.query.aggregateBy({ field: "citedUrl", since: at(23), until: now });
+  test("aggregateBy(path) groups by page", async () => {
+    const result = await analytics.query.aggregateBy({ field: "path", since: at(23), until: now });
     expect(result).toEqual({ "/a": 4, "/b": 3 });
   });
 

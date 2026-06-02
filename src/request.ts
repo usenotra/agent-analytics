@@ -17,7 +17,7 @@ export function eventFromRequest(req: Request): TrackedEvent {
 
   return {
     provider: detectProvider(request),
-    citedUrl: normalizeUrl(request.nextUrl?.href ?? request.url),
+    path: normalizeUrl(request.nextUrl?.href ?? request.url),
     sourceUrl: normalizeOptionalUrl(
       request.headers.get("referer") ?? request.headers.get("referrer") ?? undefined,
     ),

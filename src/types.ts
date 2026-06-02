@@ -35,8 +35,8 @@ export type Geo = {
 export type TrackedEvent = {
   /** Which AI agent cited the page. */
   provider: Provider;
-  /** The page on our site that was cited. */
-  citedUrl: string;
+  /** The path on our site that was cited. */
+  path: string;
   /** Where the citation came from (referrer), if known. */
   sourceUrl?: string;
   /** Visitor country, if the edge runtime provided geo data. */

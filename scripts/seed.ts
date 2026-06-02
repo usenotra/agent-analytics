@@ -49,9 +49,9 @@ const PAGE_WEIGHTS = [0.5, 0.3, 0.2];
 const noise = () => 0.8 + Math.random() * 0.4; // ±20%
 
 /** The full Redis key for one (provider, page, hour), matching the SDK exactly. */
-function eventKey(provider: string, citedUrl: string, hourInt: number): string {
-  const hash = dataHash(dimensionPairs({ provider, citedUrl }));
-  return `${prefix}:event:${hash}:${hourInt}`;
+function eventKey(provider: string, path: string, hour: number): string {
+  const hash = dataHash(dimensionPairs({ provider, path }));
+  return `${prefix}:event:${hash}:${hour}`;
 }
 
 /** Hours that are deliberately left completely empty (no provider, no page). */
@@ -82,7 +82,7 @@ function weeklyFactor(dayOfWeek: number): number {
   return dayOfWeek === 0 || dayOfWeek === 6 ? 0.7 : 1; // quieter weekends
 }
 
-type Bucket = { key: string; provider: string; citedUrl: string; hourInt: number; count: number };
+type Bucket = { key: string; provider: string; path: string; hour: number; count: number };
 
 function generate(now: Date): Bucket[] {
   const nowHour = dateToHourInt(now);
@@ -90,10 +90,10 @@ function generate(now: Date): Bucket[] {
   const buckets: Bucket[] = [];
 
   for (let hoursAgo = 0; hoursAgo < TOTAL_HOURS; hoursAgo++) {
-    const hourInt = nowHour - hoursAgo;
-    if (emptyHours.has(hourInt)) continue;
+    const hour = nowHour - hoursAgo;
+    if (emptyHours.has(hour)) continue;
 
-    const date = new Date(hourInt * HOUR_MS);
+    const date = new Date(hour * HOUR_MS);
     const diurnal = diurnalFactor(date.getUTCHours());
     const weekly = weeklyFactor(date.getUTCDay());
     // 0 at the oldest hour, 1 at "now" — drives the upward trend.
@@ -105,14 +105,14 @@ function generate(now: Date): Bucket[] {
 
       // Split this provider's hourly volume across pages; low traffic naturally
       // produces empty (provider, page) cells, especially overnight.
-      PAGES.forEach((citedUrl, pageIndex) => {
+      PAGES.forEach((path, pageIndex) => {
         const count = Math.round(hourly * PAGE_WEIGHTS[pageIndex]!);
         if (count <= 0) return;
         buckets.push({
-          key: eventKey(provider.id, citedUrl, hourInt),
+          key: eventKey(provider.id, path, hour),
           provider: provider.id,
-          citedUrl,
-          hourInt,
+          path,
+          hour,
           count,
         });
       });
@@ -144,9 +144,9 @@ async function writeBuckets(buckets: Bucket[]): Promise<void> {
     for (const b of buckets.slice(i, i + CHUNK)) {
       pipeline.hset(b.key, {
         count: b.count,
-        hourInt: b.hourInt,
+        hour: b.hour,
         provider: b.provider,
-        citedUrl: b.citedUrl,
+        path: b.path,
       });
       pipeline.expire(b.key, TTL_SECONDS);
     }
@@ -161,7 +161,7 @@ async function main(): Promise<void> {
   console.log(`Cleared ${cleared} existing event keys.`);
 
   const buckets = generate(now);
-  const populatedHours = new Set(buckets.map((b) => b.hourInt)).size;
+  const populatedHours = new Set(buckets.map((b) => b.hour)).size;
   const totalCitations = buckets.reduce((sum, b) => sum + b.count, 0);
   console.log(
     `Generated ${buckets.length} event hashes across ${populatedHours}/${TOTAL_HOURS} hours ` +

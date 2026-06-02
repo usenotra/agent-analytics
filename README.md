@@ -10,22 +10,25 @@ Every citation is bucketed by the hour and by its dimensions. A single Redis
 hash holds the counter for one combination of dimensions in one hour:
 
 ```
-key:   <prefix>:event:<data-hash>:<hourInt>
-value: { count, hourInt, provider, citedUrl, sourceUrl?, country? }
+key:   <prefix>:event:<data-hash>:<hour>
+value: { count, hour, provider, path, sourceUrl?, country? }
 ```
 
 - **`data-hash`** is derived from the event's dimensions. It is
-  order-independent: `record({ provider, citedUrl })` and
-  `record({ citedUrl, provider })` map to the same key.
-- **`hourInt`** is an integer hour bucket. The hour is never exposed in the
-  public API — every method takes and returns `Date`.
+  order-independent: `track({ provider, path })` and
+  `track({ path, provider })` map to the same key.
+- **`hour`** is an integer hour bucket. It is never exposed in the public API —
+  every method takes and returns `Date`.
 - Ingestion runs a small Lua script: it `HINCRBY`s the `count` field, and only
   the first time the counter is created does it write the immutable metadata
   and set the expiry (28 days by default, configurable).
-- A Redis Search index over these hashes (with `count` and `hourInt` as numeric
+- A Redis Search index over these hashes (with `count` and `hour` as numeric
   fields) powers the aggregations.
 
 ## Tracking
+
+`track` is overloaded — pass a `Request` (dimensions are inferred) or an
+explicit event. It never throws; the write is surfaced via `pending`.
 
 ```ts
 import { AgentAnalytics } from "@upstash/agent-analytics";
@@ -33,13 +36,13 @@ import { redis } from "./redis";
 
 const analytics = new AgentAnalytics({ redis });
 
-// From a Fetch/NextRequest — provider, citedUrl, sourceUrl and country are
+// From a Fetch/NextRequest — provider, path, sourceUrl and country are
 // inferred from the request:
 const { pending } = analytics.track(request);
 await pending;
 
-// Or record dimensions directly (time defaults to now):
-await analytics.record({ provider: "chatgpt", citedUrl: "/pricing" });
+// Or pass explicit dimensions (time defaults to now):
+await analytics.track({ provider: "chatgpt", path: "/pricing" }).pending;
 ```
 
 ### Next.js middleware
@@ -75,13 +78,13 @@ const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
 await analytics.query.aggregateBy({ field: "provider", since });
 // -> { chatgpt: 12, claude: 7, perplexity: 3 }
 
-await analytics.query.aggregateBy({ field: "citedUrl", since });
+await analytics.query.aggregateBy({ field: "path", since });
 // -> { "/pricing": 9, "/blog": 13 }
 
 // Hourly time series, grouped by provider (default). One gap-filled bucket per
 // hour in the window, sorted ascending — ready to chart.
 await analytics.query.timeseries({ since });
-await analytics.query.timeseries({ since, groupBy: "citedUrl" });
+await analytics.query.timeseries({ since, groupBy: "path" });
 // -> [{ time: Date, values: { chatgpt: 2, claude: 0 } }, ...]
 ```
 

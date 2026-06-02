@@ -34,15 +34,15 @@ export class IndexNotFoundError extends Error {
 }
 
 /**
- * Flat schema of an event hash. `count` and `hourInt` are numeric so we can
+ * Flat schema of an event hash. `count` and `hour` are numeric so we can
  * range-filter and group on them; the dimensions are keywords so we can group
  * by their exact values.
  */
 const EVENT_SCHEMA = {
   count: { type: "U64" as const, fast: true as const },
-  hourInt: { type: "U64" as const, fast: true as const },
+  hour: { type: "U64" as const, fast: true as const },
   provider: { type: "KEYWORD" as const },
-  citedUrl: { type: "KEYWORD" as const },
+  path: { type: "KEYWORD" as const },
   sourceUrl: { type: "KEYWORD" as const },
   country: { type: "KEYWORD" as const },
 };
@@ -111,7 +111,7 @@ class AnalyticsQuery {
     const { sinceHour, untilHour } = resolveRange(options);
     const result = await this.run(() =>
       this.index().aggregate({
-        filter: { hourInt: { $gte: sinceHour, $lte: untilHour } },
+        filter: { hour: { $gte: sinceHour, $lte: untilHour } },
         aggregations: {
           groups: {
             $terms: { field, size: 10_000 },
@@ -146,10 +146,10 @@ class AnalyticsQuery {
     const { sinceHour, untilHour } = resolveRange(options);
     const result = await this.run(() =>
       this.index().aggregate({
-        filter: { hourInt: { $gte: sinceHour, $lte: untilHour } },
+        filter: { hour: { $gte: sinceHour, $lte: untilHour } },
         aggregations: {
           byHour: {
-            $histogram: { field: "hourInt", interval: 1 },
+            $histogram: { field: "hour", interval: 1 },
             $aggs: {
               byGroup: {
                 $terms: { field: groupBy, size: 10_000 },
@@ -226,9 +226,9 @@ class AnalyticsQuery {
  * Stores and reads AI citation analytics on Upstash Redis.
  *
  * Each unique combination of {@link TrackedEvent} dimensions within an hour is
- * stored as a single hash at `<prefix>:event:<data-hash>:<hourInt>` whose
- * `count` field is the number of citations. A Redis Search index over those
- * hashes powers the aggregation queries, exposed under {@link analytics}.
+ * stored as a single hash at `<prefix>:event:<data-hash>:<hour>` whose `count`
+ * field is the number of citations. A Redis Search index over those hashes
+ * powers the aggregation queries, exposed under {@link query}.
  */
 export class AgentAnalytics {
   private readonly redis: Redis;
@@ -256,40 +256,29 @@ export class AgentAnalytics {
   }
 
   /** Build the full Redis key for an event hash. */
-  protected eventKey(hash: string, hourInt: number): string {
-    return `${this.keyPrefix}${hash}:${hourInt}`;
+  protected eventKey(hash: string, hour: number): string {
+    return `${this.keyPrefix}${hash}:${hour}`;
   }
 
   /**
-   * Record a single citation occurrence.
+   * Track a citation, either from an incoming `Request` (dimensions are
+   * inferred from it) or from an explicit {@link TrackedEvent}. `time` only
+   * applies to the event form and defaults to now.
    *
-   * Dimension order does not matter: `record({ provider, citedUrl })` and
-   * `record({ citedUrl, provider })` increment the same counter. Returns the
-   * counter's new value.
+   * Never throws — failures are swallowed and surfaced via the returned
+   * `pending` promise, which resolves to the counter's new value on success.
+   *
+   * Dimension order does not matter: `track({ provider, path })` and
+   * `track({ path, provider })` increment the same counter.
    */
-  public async record(event: TrackedEvent, time: Date = new Date()): Promise<number> {
-    const pairs = dimensionPairs(event as Record<string, string | undefined>);
-    const hourInt = dateToHourInt(time);
-    const key = this.eventKey(dataHash(pairs), hourInt);
-
-    const args: (string | number)[] = [this.ttlSeconds, hourInt, pairs.length];
-    for (const [name, value] of pairs) {
-      args.push(name, value);
-    }
-
-    const count = await this.redis.eval(INGEST_SCRIPT, [key], args);
-    return count as number;
-  }
-
-  /**
-   * Track a citation from an incoming `Request`. Never throws — failures are
-   * swallowed and surfaced via the returned `pending` promise.
-   */
-  public track(req: Request): TrackResponse {
+  public track(req: Request): TrackResponse;
+  public track(event: TrackedEvent, time?: Date): TrackResponse;
+  public track(eventOrReq: TrackedEvent | Request, time?: Date): TrackResponse {
     const response: TrackResponse = { success: true, pending: Promise.resolve() };
 
     try {
-      response.pending = this.record(eventFromRequest(req)).catch((error) => {
+      const event = eventOrReq instanceof Request ? eventFromRequest(eventOrReq) : eventOrReq;
+      response.pending = this.ingest(event, time).catch((error) => {
         console.warn("Failed to record analytics", error);
       });
     } catch (error) {
@@ -297,5 +286,20 @@ export class AgentAnalytics {
     }
 
     return response;
+  }
+
+  /** Increment the counter for one event occurrence; returns its new value. */
+  private async ingest(event: TrackedEvent, time: Date = new Date()): Promise<number> {
+    const pairs = dimensionPairs(event as Record<string, string | undefined>);
+    const hour = dateToHourInt(time);
+    const key = this.eventKey(dataHash(pairs), hour);
+
+    const args: (string | number)[] = [this.ttlSeconds, hour, pairs.length];
+    for (const [name, value] of pairs) {
+      args.push(name, value);
+    }
+
+    const count = await this.redis.eval(INGEST_SCRIPT, [key], args);
+    return count as number;
   }
 }
