@@ -60,9 +60,7 @@ explicit event. It returns a promise resolving to the counter's new value.
 
 ```ts
 import { AgentAnalytics } from "@upstash/agent-analytics";
-import { redis } from "./redis";
-
-const analytics = new AgentAnalytics({ redis });
+const analytics = AgentAnalytics.fromEnv();
 
 // From a Fetch/NextRequest — provider and path are inferred:
 await analytics.track(request);
