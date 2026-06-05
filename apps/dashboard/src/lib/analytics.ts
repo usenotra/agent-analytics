@@ -9,9 +9,14 @@ export async function getAnalyticsReady(): Promise<AgentAnalytics | null> {
   }
 
   analyticsReady ??= (async () => {
-    const analytics = new AgentAnalytics({ redis: Redis.fromEnv() });
-    await analytics.query.getIndex();
-    return analytics;
+    try {
+      const analytics = new AgentAnalytics({ redis: Redis.fromEnv() });
+      await analytics.query.getIndex();
+      return analytics;
+    } catch (error) {
+      analyticsReady = undefined;
+      throw error;
+    }
   })();
 
   return analyticsReady;
