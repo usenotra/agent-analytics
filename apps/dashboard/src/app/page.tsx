@@ -1,132 +1,226 @@
-import { DEFAULT_PREFIX, getAnalyticsReady } from "@/lib/analytics";
+import {
+  Activity,
+  FileText,
+  Sparkles,
+  TrendingDown,
+  TrendingUp,
+} from "lucide-react";
 
-const DEMO_PROVIDERS = [
-  { provider: "chatgpt", count: 128 },
-  { provider: "claude", count: 94 },
-  { provider: "perplexity", count: 67 },
-  { provider: "gemini", count: 41 },
-  { provider: "copilot", count: 22 },
-];
+import { CitationsAreaChart } from "@/components/charts/citations-area-chart";
+import { ProvidersBarChart } from "@/components/charts/providers-bar-chart";
+import { ShareDonutChart } from "@/components/charts/share-donut-chart";
+import { CitedPages } from "@/components/cited-pages";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { getDashboardData } from "@/lib/dashboard-data";
 
-async function getProviderStats() {
-  const demoTotal = DEMO_PROVIDERS.reduce((sum, row) => sum + row.count, 0);
-
-  try {
-    const analytics = await getAnalyticsReady();
-    if (!analytics) {
-      return { connected: false as const, providers: DEMO_PROVIDERS, total: demoTotal };
-    }
-
-    const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const rows = await analytics.query.aggregateBy({ since, field: "provider" });
-    const providers = Object.entries(rows).map(([provider, count]) => ({
-      provider,
-      count,
-    }));
-    const total = providers.reduce((sum, row) => sum + row.count, 0);
-
-    return { connected: true as const, providers, total };
-  } catch {
-    return { connected: false as const, providers: DEMO_PROVIDERS, total: demoTotal };
-  }
-}
+export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
-  const stats = await getProviderStats();
+  const data = await getDashboardData();
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-8 px-6 py-12">
-      <header className="space-y-3">
-        <p className="text-sm font-medium uppercase tracking-widest text-indigo-400">@usenotra/agent-analytics</p>
-        <h1 className="text-4xl font-semibold tracking-tight">Agent Analytics Dashboard</h1>
-        <p className="max-w-2xl text-lg text-zinc-400">
-          Monitor citations from ChatGPT, Claude, Perplexity, Gemini, and Copilot. This app lives in the Turborepo
-          monorepo and imports the workspace SDK package directly.
-        </p>
+    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-8 px-6 py-12">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="space-y-3">
+          <h1 className="text-4xl font-semibold tracking-tight">
+            Agent Analytics
+          </h1>
+          <p className="max-w-2xl text-muted-foreground">
+            Citations from ChatGPT, Claude, Perplexity, Gemini, and Copilot over
+            the last 7 days.
+          </p>
+        </div>
       </header>
 
-      <section className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Total citations (7d)" value={stats.total.toLocaleString()} />
-        <StatCard label="Redis prefix" value={DEFAULT_PREFIX} mono />
+      <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
-          label="Data source"
-          value={stats.connected ? "Upstash Redis" : "Demo data"}
-          hint={stats.connected ? "Live analytics" : "Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN"}
+          icon={<Activity className="size-4" />}
+          label="Total citations (7d)"
+          value={data.total.toLocaleString()}
+          delta={data.delta}
+        />
+        <StatCard
+          icon={<Sparkles className="size-4" />}
+          label="Top provider"
+          value={data.topProvider?.label ?? "—"}
+          hint={
+            data.topProvider
+              ? `${data.topProvider.count.toLocaleString()} citations`
+              : "No data yet"
+          }
+        />
+        <StatCard
+          icon={<FileText className="size-4" />}
+          label="Cited pages"
+          value={data.uniquePaths.toLocaleString()}
+          hint="Unique paths"
         />
       </section>
 
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-6">
-        <div className="mb-6 flex items-center justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-medium">Citations by provider</h2>
-            <p className="text-sm text-zinc-400">Last 7 days, grouped by AI agent</p>
-          </div>
-          {!stats.connected && (
-            <span className="rounded-full bg-indigo-500/15 px-3 py-1 text-xs font-medium text-indigo-300">
-              Demo mode
-            </span>
-          )}
-        </div>
+      <section className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle>Citations over time</CardTitle>
+            <CardDescription>
+              Daily citations, stacked by provider
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <CitationsAreaChart data={data.series} providers={data.providers} />
+          </CardContent>
+        </Card>
 
-        <div className="space-y-3">
-          {stats.providers.length === 0 ? (
-            <p className="text-sm text-zinc-400">No citation data yet. Connect Upstash Redis to load live analytics.</p>
-          ) : (
-            stats.providers.map((row) => (
-              <ProviderRow key={row.provider} provider={row.provider} count={row.count} max={stats.total || 1} />
-            ))
-          )}
-        </div>
+        <Card>
+          <CardHeader>
+            <CardTitle>Share by provider</CardTitle>
+            <CardDescription>Last 7 days</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data.providers.length ? (
+              <ShareDonutChart data={data.providers} />
+            ) : (
+              <EmptyState />
+            )}
+          </CardContent>
+        </Card>
       </section>
 
-      <section className="rounded-2xl border border-zinc-800 bg-zinc-950 p-6 text-sm text-zinc-400">
-        <h2 className="mb-2 text-base font-medium text-zinc-200">Monorepo layout</h2>
-        <ul className="list-inside list-disc space-y-1">
-          <li>
-            <code className="text-zinc-300">packages/agent-analytics</code> — SDK published as{" "}
-            <code className="text-zinc-300">@usenotra/agent-analytics</code>
-          </li>
-          <li>
-            <code className="text-zinc-300">apps/dashboard</code> — this Next.js app
-          </li>
-        </ul>
+      <section className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle>Citations by provider</CardTitle>
+            <CardDescription>Ranked by volume</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data.providers.length ? (
+              <ProvidersBarChart data={data.providers} />
+            ) : (
+              <EmptyState />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Top cited pages</CardTitle>
+            <CardDescription>Hover a path to see which agents cite it</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {data.paths.length ? (
+              <CitedPages paths={data.paths} />
+            ) : (
+              <EmptyState />
+            )}
+          </CardContent>
+        </Card>
+      </section>
+
+      <section className="grid gap-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>Accept headers</CardTitle>
+            <CardDescription>
+              Most common Accept headers and who sends them
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {data.acceptHeaders.length ? (
+              data.acceptHeaders.map((row) => (
+                <div key={row.accept} className="space-y-2">
+                  <div className="flex items-center justify-between gap-4 text-sm">
+                    <span className="truncate font-mono text-muted-foreground">
+                      {row.accept}
+                    </span>
+                    <span className="font-medium tabular-nums">
+                      {row.total.toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {row.providers.map((provider) => (
+                      <span
+                        key={provider.provider}
+                        className="inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs"
+                      >
+                        <span
+                          className="size-1.5 rounded-full"
+                          style={{ backgroundColor: provider.color }}
+                        />
+                        {provider.label}
+                        <span className="tabular-nums text-muted-foreground">
+                          {provider.count.toLocaleString()}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <div className="flex h-[220px] items-center justify-center text-center text-sm text-muted-foreground">
+                No Accept headers recorded yet.
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </section>
     </main>
   );
 }
 
 function StatCard({
+  icon,
   label,
   value,
   hint,
-  mono = false,
+  delta,
 }: {
+  icon: React.ReactNode;
   label: string;
   value: string;
   hint?: string;
-  mono?: boolean;
+  delta?: number | null;
 }) {
+  const up = (delta ?? 0) >= 0;
+
   return (
-    <article className="rounded-2xl border border-zinc-800 bg-zinc-900/60 p-5">
-      <p className="text-sm text-zinc-400">{label}</p>
-      <p className={`mt-2 text-2xl font-semibold ${mono ? "truncate font-mono text-base" : ""}`}>{value}</p>
-      {hint ? <p className="mt-2 text-xs text-zinc-500">{hint}</p> : null}
-    </article>
+    <Card className="gap-0 py-5">
+      <CardContent className="space-y-2">
+        <div className="flex items-center justify-between text-muted-foreground">
+          <span className="text-sm">{label}</span>
+          {icon}
+        </div>
+        <p className="text-2xl font-semibold tracking-tight">{value}</p>
+        {delta != null ? (
+          <span
+            className={`inline-flex items-center gap-1 text-xs font-medium ${
+              up ? "text-emerald-400" : "text-red-400"
+            }`}
+          >
+            {up ? (
+              <TrendingUp className="size-3" />
+            ) : (
+              <TrendingDown className="size-3" />
+            )}
+            {up ? "+" : ""}
+            {delta.toFixed(1)}% vs prev. 7d
+          </span>
+        ) : hint ? (
+          <p className="text-xs text-muted-foreground">{hint}</p>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
-function ProviderRow({ provider, count, max }: { provider: string; count: number; max: number }) {
-  const width = Math.max(8, Math.round((count / max) * 100));
-
+function EmptyState() {
   return (
-    <div className="space-y-2">
-      <div className="flex items-center justify-between text-sm">
-        <span className="font-medium capitalize text-zinc-200">{provider}</span>
-        <span className="text-zinc-400">{count.toLocaleString()}</span>
-      </div>
-      <div className="h-2 overflow-hidden rounded-full bg-zinc-800">
-        <div className="h-full rounded-full bg-indigo-500" style={{ width: `${width}%` }} />
-      </div>
+    <div className="flex h-[220px] items-center justify-center text-center text-sm text-muted-foreground">
+      No citation data yet. Connect Upstash Redis to load live analytics.
     </div>
   );
 }

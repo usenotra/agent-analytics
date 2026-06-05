@@ -1,16 +1,22 @@
 import { AgentAnalytics, DEFAULT_PREFIX } from "@usenotra/agent-analytics";
-import { Redis } from "@upstash/redis";
+
+import { redis } from "@/lib/redis";
+
+export const ANALYTICS_PREFIX =
+  process.env.AGENT_ANALYTICS_PREFIX || DEFAULT_PREFIX;
+
+export const EVENT_KEY_PREFIX = `${ANALYTICS_PREFIX}:event:`;
 
 let analyticsReady: Promise<AgentAnalytics | null> | undefined;
 
 export async function getAnalyticsReady(): Promise<AgentAnalytics | null> {
-  if (!process.env.UPSTASH_REDIS_REST_URL || !process.env.UPSTASH_REDIS_REST_TOKEN) {
+  if (!redis) {
     return null;
   }
 
   analyticsReady ??= (async () => {
     try {
-      const analytics = new AgentAnalytics({ redis: Redis.fromEnv() });
+      const analytics = new AgentAnalytics({ redis, prefix: ANALYTICS_PREFIX });
       await analytics.query.getIndex();
       return analytics;
     } catch (error) {
