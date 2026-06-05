@@ -1,4 +1,4 @@
-import { DEFAULT_PREFIX, getAnalytics } from "@/lib/analytics";
+import { DEFAULT_PREFIX, getAnalyticsReady } from "@/lib/analytics";
 
 const DEMO_PROVIDERS = [
   { provider: "chatgpt", count: 128 },
@@ -9,13 +9,14 @@ const DEMO_PROVIDERS = [
 ];
 
 async function getProviderStats() {
-  const analytics = getAnalytics();
-  if (!analytics) {
-    return { connected: false as const, providers: DEMO_PROVIDERS, total: DEMO_PROVIDERS.reduce((sum, row) => sum + row.count, 0) };
-  }
+  const demoTotal = DEMO_PROVIDERS.reduce((sum, row) => sum + row.count, 0);
 
   try {
-    await analytics.query.getIndex();
+    const analytics = await getAnalyticsReady();
+    if (!analytics) {
+      return { connected: false as const, providers: DEMO_PROVIDERS, total: demoTotal };
+    }
+
     const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const rows = await analytics.query.aggregateBy({ since, field: "provider" });
     const providers = Object.entries(rows).map(([provider, count]) => ({
@@ -26,7 +27,7 @@ async function getProviderStats() {
 
     return { connected: true as const, providers, total };
   } catch {
-    return { connected: true as const, providers: [], total: 0 };
+    return { connected: false as const, providers: DEMO_PROVIDERS, total: demoTotal };
   }
 }
 
