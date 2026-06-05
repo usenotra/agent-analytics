@@ -1,0 +1,55 @@
+{
+  "name": "@usenotra/agent-analytics",
+  "version": "0.1.3",
+  "description": "AI citation analytics SDK for Upstash Redis.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/upstash/agent-analytics.git",
+    "directory": "packages/agent-analytics"
+  },
+  "bugs": {
+    "url": "https://github.com/upstash/agent-analytics/issues"
+  },
+  "homepage": "https://github.com/upstash/agent-analytics#readme",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup src/index.ts --format esm,cjs --dts --clean",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "prepack": "bun run build",
+    "pack:dry": "npm pack --dry-run"
+  },
+  "keywords": [
+    "upstash",
+    "analytics",
+    "ai",
+    "citations",
+    "nextjs"
+  ],
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@upstash/redis": "^1.38.0",
+    "tsup": "^8.5.1",
+    "typescript": "^6.0.3"
+  },
+  "peerDependencies": {
+    "@upstash/redis": "^1.38.0",
+    "typescript": ">=5"
+  }
+}

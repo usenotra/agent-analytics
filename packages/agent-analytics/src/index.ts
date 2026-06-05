@@ -1,4 +1,4 @@
-export { AgentAnalytics, IndexNotFoundError } from "./analytics.ts";
+export { AgentAnalytics, DEFAULT_PREFIX, IndexNotFoundError } from "./analytics.ts";
 
 export type {
   AgentAnalyticsConfig,

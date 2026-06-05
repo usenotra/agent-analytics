@@ -15,7 +15,7 @@ import type {
   TrackedEvent,
 } from "./types.ts";
 
-export const DEFAULT_PREFIX = "@upstash/agent-analytics";
+export const DEFAULT_PREFIX = "@usenotra/agent-analytics";
 export const DEFAULT_RETENTION = "28d";
 
 /**

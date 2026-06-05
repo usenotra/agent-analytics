@@ -26,6 +26,11 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .eslintcache
 .cache
 *.tsbuildinfo
+.turbo
+
+# next.js
+.next
+out
 
 # IntelliJ based IDEs
 .idea
