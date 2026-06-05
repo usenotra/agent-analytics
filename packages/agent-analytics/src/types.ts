@@ -8,7 +8,15 @@ export type { Duration } from "./duration.ts";
  * request's user-agent and referrer. Only known agents are recorded — a
  * request that matches none of these is dropped rather than bucketed.
  */
-export type Provider = "chatgpt" | "claude" | "perplexity" | "gemini" | "copilot";
+export type Provider =
+  | "chatgpt"
+  | "claude"
+  | "claude-code"
+  | "diffbot"
+  | "shap"
+  | "perplexity"
+  | "gemini"
+  | "copilot";
 
 /**
  * The dimensions of a tracked citation. This is intentionally a small, pruned

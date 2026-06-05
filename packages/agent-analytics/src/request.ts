@@ -50,7 +50,10 @@ export function detectProvider(req: Request): Provider | undefined {
   const source = `${userAgent} ${referer}`;
 
   if (source.includes("chatgpt") || source.includes("openai")) return "chatgpt";
+  if (source.includes("claude-code")) return "claude-code";
   if (source.includes("claude") || source.includes("anthropic")) return "claude";
+  if (source.includes("diffbot")) return "diffbot";
+  if (source.includes("shap-user") || source.includes("shapbot")) return "shap";
   if (source.includes("perplexity")) return "perplexity";
   if (source.includes("gemini") || source.includes("google-extended")) return "gemini";
   if (source.includes("copilot") || source.includes("bing")) return "copilot";
