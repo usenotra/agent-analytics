@@ -21,6 +21,7 @@ export function eventFromRequest(req: Request): TrackedEvent | undefined {
   return {
     provider,
     path: normalizeUrl(request.nextUrl?.href ?? request.url),
+    accept: normalizeHeader(request.headers.get("accept")),
   };
 }
 
@@ -33,6 +34,10 @@ function normalizeUrl(url: string): string {
   } catch {
     return url;
   }
+}
+
+function normalizeHeader(value: string | null): string | undefined {
+  return value?.trim().toLowerCase() || undefined;
 }
 
 /**
