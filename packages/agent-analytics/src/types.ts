@@ -40,7 +40,7 @@ export type AgentAnalyticsConfig = {
   /**
    * All analytics keys in Redis are prefixed with this.
    *
-   * @default "@upstash/agent-analytics"
+   * @default "@usenotra/agent-analytics"
    */
   prefix?: string;
   /**

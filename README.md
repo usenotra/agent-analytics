@@ -1,30 +1,30 @@
-# @upstash/agent-analytics
+# Agent Analytics Monorepo
 
-Track Claude, ChatGPT, Perplexity and other citations to your website.
+Turborepo monorepo for AI citation analytics.
 
-![AI Analytics Screenshot](public/agentanalytics.png)
+## Packages
 
-### Setup
+| Package | Description |
+|---------|-------------|
+| [`@usenotra/agent-analytics`](./packages/agent-analytics) | SDK for tracking AI agent citations in Upstash Redis |
 
-Track a request in your Next.js middleware (now named proxy.ts):
+## Apps
 
-```typescript
-// proxy.ts
-import { NextResponse, type NextRequest, after } from "next/server"
-import { AgentAnalytics } from "@upstash/agent-analytics"
-import { redis } from "./redis"
+| App | Description |
+|-----|-------------|
+| [`dashboard`](./apps/dashboard) | Next.js dashboard for viewing agent analytics |
 
-const analytics = new AgentAnalytics({ redis })
+## Development
 
-export const proxy = async (request: NextRequest) => {
-  after(() => analytics.track(request))
-
-  return NextResponse.next()
-}
-
-export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
-}
+```bash
+bun install
+bun run build
+bun run dev
 ```
 
-You can now see AI traffic in your Upstash dashboard under AI Tracking (three dot menu in the top).
+Run a single workspace:
+
+```bash
+bun run dev --filter dashboard
+bun run test --filter @usenotra/agent-analytics
+```
